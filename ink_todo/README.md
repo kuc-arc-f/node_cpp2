@@ -46,4 +46,16 @@ npm run start
 ```
 
 ***
+* operate commond
+* add
+
+```
+add hello
+```
+* list
+```
+list
+```
+
+***
 
