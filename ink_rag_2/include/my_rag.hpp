@@ -1,0 +1,186 @@
+#pragma once
+#include <windows.h>
+#include <winhttp.h>
+#include <cpr/cpr.h>
+#include <iostream>
+#include <string>
+#include <vector>
+#include <cstdlib>
+#include <nlohmann/json.hpp>
+
+#include "HttpClient.h"
+#include "Database.hpp"
+
+#pragma comment(lib, "winhttp.lib")
+
+using json = nlohmann::json;
+
+const size_t      VECTOR_DIM = 3072;  // ベクトル次元数
+const std::string DB_PATH = "example.db";
+
+const std::wstring API_URL_CHAT = L"http://localhost:8090/v1/chat/completions";
+
+struct ChatQuery {
+    std::string role;
+    std::string content;
+};
+// これ一行で、QueryReq <=> json の変換が魔法のように可能になります
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(ChatQuery, role, content)
+
+struct ChatRequest {
+    std::string model;
+    std::vector<ChatQuery> messages;
+    double temperature;
+};
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(ChatRequest, model, messages, temperature)
+
+
+// UTF-8文字列をワイド文字列(LPCWSTR)に変換するヘルパー
+std::wstring Utf8ToWide(const std::string& utf8) {
+    if (utf8.empty()) return L"";
+    int len = MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), -1, nullptr, 0);
+    std::wstring wide(len, L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), -1, &wide[0], len);
+    if (!wide.empty() && wide.back() == L'\0') wide.pop_back();
+    return wide;
+}
+
+std::string extractContent(const std::string& jsonStr)
+{
+    try {
+        auto j = nlohmann::json::parse(jsonStr);
+        return j["choices"][0]["message"]["content"].get<std::string>();
+    } catch (const std::exception& e) {
+        std::cerr << "[ERROR] JSON parse: " << e.what() << "\n";
+        return "";
+    }
+}
+
+class MyRag {
+private:
+    std::string m_name;
+
+public:
+    explicit MyRag(std::string str){}
+
+    ~MyRag() {}
+
+
+    // Gemini Embedding API から埋め込みベクトルを取得する関数
+    std::vector<float> getGeminiEmbedding(const std::string& apiKey, const std::string& text) {
+        std::vector<float> ret;
+        const std::string url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent";
+        
+        // リクエストボディの構築
+        json requestBody = {
+            {"model", "models/gemini-embedding-001"},
+            {"content", {
+                {"parts", {{{"text", text}}}}
+            }}
+        };
+
+        cpr::Response r = cpr::Post(
+            cpr::Url{url},
+            cpr::Header{{"Content-Type", "application/json"}, 
+                        {"x-goog-api-key", apiKey}},
+            cpr::Body{requestBody.dump()}
+        );
+
+        // レスポンスのパースと embedding 配列の抽出
+        try {
+            if (r.status_code != 200) {
+                std::wcout << "error , status_code:" << r.status_code << std::endl;
+                throw std::runtime_error("API request failed with status ");
+            }
+
+            json response = json::parse(r.text);
+            std::vector<float> embedding = response["embedding"]["values"]
+                                                .get<std::vector<float>>();
+            return embedding;
+        } catch (const json::exception& e) {
+            //throw std::runtime_error(std::string("JSON parse error: ") + e.what() + 
+            //                         "\nRaw response: " + r.text);
+            std::wcout << e.what() << std::endl;
+            return ret;
+        }
+    }    
+
+    std::string send_chat(std::string query){
+        std::string ret = "";
+        ChatQuery req2;
+        req2.role = "user";
+        req2.content = query;
+        json j2 = req2;
+        std::string json_str2 = j2.dump();
+        //std::wstring w_str2 = StringToWString(json_str2);
+        //std::wcout << L"json_str2:" << w_str2 << std::endl;
+        std::vector<ChatQuery> chat_messages;
+        chat_messages.push_back(req2);
+
+        std::string target_msg = "[";
+        target_msg.append(json_str2);
+        target_msg.append("]");
+        ChatRequest req3;
+        req3.model = "local-model";
+        req3.messages = chat_messages;
+        req3.temperature = 0.7;
+        json j3 = req3; // 構造体を代入するだけ！
+        std::string json_str3 = j3.dump();
+        //std::wstring w_str3 = StringToWString(json_str3);
+        //std::wcout << L"json_str3:" << w_str3 << std::endl;
+        HttpClient client;
+
+        auto resp2 = client.Post(
+            API_URL_CHAT,
+            json_str3,
+            L"application/json");
+
+        if (resp2.statusCode == 200) {
+            //std::wcout << L"resp.statusCode=200 \n\n";
+            std::string reply = extractContent(resp2.body);
+            ret = reply;
+        }
+        return ret;
+    }
+
+    std::string rag_search(std::string query, std::string api_key) {
+        try {
+            std::string ret = "";
+            auto embedding = getGeminiEmbedding(api_key, query);
+            //std::wcout << L"Embedding dimensions: " << embedding.size() << std::endl;
+
+            Database dLib(DB_PATH);
+            int count =  dLib.get_count();
+            //std::wcout << L"count=" << count << L"\n";
+            if(count == 0){
+                std::wcout << L"error, documet none"  << L"\n";
+                return "";
+            }             
+//return "";
+            std::string resp_str = dLib.rag_search(embedding);        
+            std::string out_str = "日本語で、回答して欲しい。 \n要約して欲しい。\n\n";
+            //std::string resp_str = out;
+            if(resp_str.empty()){
+                out_str.append("user query: ");
+                out_str.append(query);
+                out_str.append(" \n");
+            }else{
+                out_str.append("context:");
+                out_str.append(resp_str);
+                out_str.append("\n user query: ");
+                out_str.append(query);
+                out_str.append(" \n");
+            }
+
+            ret = send_chat(out_str);
+            //ret = out_str;
+            return ret;
+        }
+        catch (const std::exception& e) {
+            std::wcerr << L"\n[ERROR] " << e.what() << L"\n";
+            std::wcerr << L"Error , rag_search" << std::endl;
+        }
+    }    
+
+
+};
