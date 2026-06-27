@@ -42,6 +42,13 @@ https://openrouter.ai/
 https://openrouter.ai/models
 
 ***
+
+https://www.sqlite.org/download.html
+
+* sqlite-amalgamation-*.zip , download
+* sqlite3.h , sqlite3.c
+
+***
 * vcpkg install
 ```
 vcpkg install nlohmann-json:x64-windows
