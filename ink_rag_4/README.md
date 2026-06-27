@@ -4,7 +4,7 @@
 
  Author  :
 
- date    : 2026/06/23
+ date    : 2026/06/27
 
  update :
 
@@ -72,4 +72,7 @@ npm run start
 ```
 
 ***
+### blog
+
+https://zenn.dev/knaka0209/scraps/f55041cfe3dc65
 
