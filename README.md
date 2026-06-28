@@ -1,6 +1,6 @@
 ﻿# node_cpp2
 
- Version: 0.9.4
+ Version: 0.9.1
 
  Author  :
 
@@ -25,3 +25,8 @@ node.js C++ Windows , TUI example
 
 https://github.com/vadimdemedes/ink
 
+***
+### version
+
+* V_0_9_1: new
+***
