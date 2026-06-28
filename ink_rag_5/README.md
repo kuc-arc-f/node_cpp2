@@ -32,7 +32,7 @@ https://github.com/kuc-arc-f/cpp_12ex/blob/main/rag_15sql
 
 * RAG APP
 
-![img1](/images/ink_rag_5.png)
+![img1](/images/ink_rag_5_2.png)
 
 ***
 ### related
